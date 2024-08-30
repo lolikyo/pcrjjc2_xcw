@@ -1,51 +1,28 @@
-import time
-
-import zhconv
+import asyncio
 from PIL import Image, ImageDraw, ImageFont, ImageColor
-# from pathlib import Path
-from hoshino import R
-from hoshino.aiorequests import run_sync_func
 from ..priconne import chara
+import time
+import zhconv
+from hoshino.aiorequests import run_sync_func
+from hoshino import util, R
+from typing import Union
 
 path = R.img('pcrjjc2').path  # 获取文件所在目录的绝对路径f
 font_cn_path = str(f'{path}/fonts/SourceHanSansCN-Medium.otf')  # Path是路径对象，必须转为str之后ImageFont才能读取
 font_tw_path = str(f'{path}/fonts/pcrtwfont.ttf')
 
-server_name = 'bilibili官方服务器'  # 设置服务器名称
+server_name = 'bilibili官方服务器' # 设置服务器名称
+
+running_loop: Union[asyncio.AbstractEventLoop, None] = None
 
 
-def _TraditionalToSimplified(hant_str: str):
-    '''
-    Function: 将 hant_str 由繁体转化为简体
-    '''
-    return zhconv.convert(str(hant_str), 'zh-hans')
+def sync_get_icon(id) -> R.ResImg:
+    obj = chara.fromid(id)
+    return asyncio.new_event_loop().run_until_complete(
+        asyncio.wait_for(obj.get_icon(), timeout=None, loop=running_loop)
+    )
 
 
-def _cut_str(obj: str, sec: int):
-    """
-    按步长分割字符串
-    """
-    return [obj[i: i + sec] for i in range(0, len(obj), sec)]
-
-
-# async def get_cx_name(cx):
-#     '''
-#     获取服务器名称
-#     '''
-#     if cx == '1':
-#         cx_name = '美食殿堂'
-#         return cx_name
-#     elif cx == '2':
-#         cx_name = '真步真步王国'
-#         return cx_name
-#     elif cx == '3':
-#         cx_name = '破晓之星'
-#         return cx_name
-#     elif cx == '4':
-#         cx_name = '小小甜心'
-#         return cx_name
-
-# async def generate_info_pic(data, cx):
 def get_im_frame(rank):
     if rank == 1:
         frame_tmp = 'blue.png'
@@ -69,18 +46,36 @@ def get_im_frame(rank):
     return im_frame
 
 
-async def generate_info_pic(data):
+def _TraditionalToSimplified(hant_str: str):
+    '''
+    Function: 将 hant_str 由繁体转化为简体
+    '''
+    return zhconv.convert(str(hant_str), 'zh-hans')
+
+
+def _cut_str(obj: str, sec: int):
+    """
+    按步长分割字符串
+    """
+    return [obj[i: i + sec] for i in range(0, len(obj), sec)]
+
+
+def _generate_info_pic_internal(data):
     '''
     个人资料卡生成
     '''
     favorite_rank = data['favorite_unit']['promotion_level']  # rank获取
     im_frame = get_im_frame(favorite_rank)
     im = Image.open(f'{path}/img/template.png').convert("RGBA")  # 图片模板
+
     try:
         id_favorite = int(str(data['favorite_unit']['id'])[0:4])  # 截取第1位到第4位的字符
     except:
         id_favorite = 1000  # 一个？角色
-    user_avatar = await chara.fromid(id_favorite).render_icon(90)
+    pic_dir = sync_get_icon(id_favorite).path
+
+    user_avatar = Image.open(pic_dir).convert("RGBA")
+    user_avatar = user_avatar.resize((90, 90))
     im.paste(user_avatar, (44, 150), mask=user_avatar)
     im_frame = im_frame.resize((100, 100))
     im.paste(im=im_frame, box=(39, 145), mask=im_frame)
@@ -99,16 +94,22 @@ async def generate_info_pic(data):
     font_black = (77, 76, 81, 255)
 
     # 资料卡 个人信息
-    user_name_text = data["user_info"]["user_name"]
+    user_name_text = _TraditionalToSimplified(data["user_info"]["user_name"])
+    user_name_text = util.filt_message(str(user_name_text))
     team_level_text = _TraditionalToSimplified(data["user_info"]["team_level"])
+    team_level_text = util.filt_message(str(team_level_text))
     total_power_text = _TraditionalToSimplified(
         data["user_info"]["total_power"])
+    total_power_text = util.filt_message(str(total_power_text))
     clan_name_text = _TraditionalToSimplified(data["clan_name"])
-    user_comment_arr = _cut_str(
-        data["user_info"]["user_comment"], 25)
+    clan_name_text = util.filt_message(str(clan_name_text))
+    user_comment_arr = _TraditionalToSimplified(data["user_info"]["user_comment"])
+    user_comment_arr = util.filt_message(str(user_comment_arr))
+    user_comment_arr = _cut_str(user_comment_arr, 25)
     last_login_time_text = _TraditionalToSimplified(time.strftime(
         "%Y/%m/%d %H:%M:%S", time.localtime(data["user_info"]["last_login_time"]))).split(' ')
     friend_num = _TraditionalToSimplified(data["user_info"]["friend_num"])
+    friend_num = util.filt_message(str(friend_num))
 
     draw.text((194, 120), user_name_text, font_black, font)
 
@@ -202,14 +203,16 @@ async def generate_info_pic(data):
     return im
 
 
-async def _friend_support_position(fr_data, im, fnt, rgb, im_frame, bbox):
+def _friend_support_position(fr_data, im, fnt, rgb, im_frame, bbox):
     '''
     好友支援位
     '''
     # 合成头像
     im_yuansu = Image.open(f'{path}/img/yuansu.png').convert("RGBA")  # 一个支援ui模板
     id_friend_support = int(str(fr_data['unit_data']['id'])[0:4])
-    avatar = await chara.fromid(id_friend_support).render_icon(115)
+    pic_dir = sync_get_icon(id_friend_support).path
+    avatar = Image.open(pic_dir).convert("RGBA")
+    avatar = avatar.resize((115, 115))
     im_yuansu.paste(im=avatar, box=(28, 78), mask=avatar)
     im_frame = im_frame.resize((128, 128))
     im_yuansu.paste(im=im_frame, box=(22, 72), mask=im_frame)
@@ -227,14 +230,16 @@ async def _friend_support_position(fr_data, im, fnt, rgb, im_frame, bbox):
     return im
 
 
-async def _clan_support_position(clan_data, im, fnt, rgb, im_frame, bbox):
+def _clan_support_position(clan_data, im, fnt, rgb, im_frame, bbox):
     '''
     地下城及战队支援位
     '''
     # 合成头像
     im_yuansu = Image.open(f'{path}/img/yuansu.png').convert("RGBA")  # 一个支援ui模板
     id_clan_support = int(str(clan_data['unit_data']['id'])[0:4])
-    avatar = await chara.fromid(id_clan_support).render_icon(115)
+    pic_dir = sync_get_icon(id_clan_support).path
+    avatar = Image.open(pic_dir).convert("RGBA")
+    avatar = avatar.resize((115, 115))
     im_yuansu.paste(im=avatar, box=(28, 78), mask=avatar)
     im_frame = im_frame.resize((128, 128))
     im_yuansu.paste(im=im_frame, box=(22, 72), mask=im_frame)
@@ -252,7 +257,7 @@ async def _clan_support_position(clan_data, im, fnt, rgb, im_frame, bbox):
     return im
 
 
-async def generate_support_pic(data):
+def _generate_support_pic_internal(data):
     '''
     支援界面图片合成
     '''
@@ -267,34 +272,47 @@ async def generate_support_pic(data):
             bbox = (1284, 156)
             rank = fr_data['unit_data']['promotion_level']  # rank获取
             im_frame = get_im_frame(rank)
-            im = await _friend_support_position(fr_data, im, fnt, rgb, im_frame, bbox)
+            im = _friend_support_position(fr_data, im, fnt, rgb, im_frame, bbox)
         elif fr_data['position'] == 2:  # 好友支援位2
             bbox = (1284, 459)
             rank = fr_data['unit_data']['promotion_level']  # rank获取
             im_frame = get_im_frame(rank)
-            im = await _friend_support_position(fr_data, im, fnt, rgb, im_frame, bbox)
+            im = _friend_support_position(fr_data, im, fnt, rgb, im_frame, bbox)
 
     for clan_data in data['clan_support_units']:
         if clan_data['position'] == 1:  # 地下城位置1
             bbox = (43, 156)
             rank = clan_data['unit_data']['promotion_level']  # rank获取
             im_frame = get_im_frame(rank)
-            im = await _clan_support_position(clan_data, im, fnt, rgb, im_frame, bbox)
+            im = _clan_support_position(clan_data, im, fnt, rgb, im_frame, bbox)
         elif clan_data['position'] == 2:  # 地下城位置2
             bbox = (43, 459)
             rank = clan_data['unit_data']['promotion_level']  # rank获取
             im_frame = get_im_frame(rank)
-            im = await _clan_support_position(clan_data, im, fnt, rgb, im_frame, bbox)
+            im = _clan_support_position(clan_data, im, fnt, rgb, im_frame, bbox)
         elif clan_data['position'] == 3:  # 战队位置1
             bbox = (665, 156)
             rank = clan_data['unit_data']['promotion_level']  # rank获取
             im_frame = get_im_frame(rank)
-            im = await _clan_support_position(clan_data, im, fnt, rgb, im_frame, bbox)
+            im = _clan_support_position(clan_data, im, fnt, rgb, im_frame, bbox)
         elif clan_data['position'] == 4:  # 战队位置2
             bbox = (665, 459)
             rank = clan_data['unit_data']['promotion_level']  # rank获取
             im_frame = get_im_frame(rank)
-            im = await _clan_support_position(clan_data, im, fnt, rgb, im_frame, bbox)
+            im = _clan_support_position(clan_data, im, fnt, rgb, im_frame, bbox)
 
     return im
 
+
+async def generate_support_pic(*args, **kwargs):
+    global running_loop
+    if running_loop is None:
+        running_loop = asyncio.get_running_loop()
+    return await run_sync_func(_generate_support_pic_internal, *args, **kwargs)
+
+
+async def generate_info_pic(*args, **kwargs):
+    global running_loop
+    if running_loop is None:
+        running_loop = asyncio.get_running_loop()
+    return await run_sync_func(_generate_info_pic_internal, *args, **kwargs)
