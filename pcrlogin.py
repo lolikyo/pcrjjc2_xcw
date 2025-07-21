@@ -249,6 +249,7 @@ class Login:
                         if exceptions[0].code == 0:
                             sv.logger.info(f'客户端{self.no}更新版本号')
                             self.client.update_version()
+                            self.client.set_headers()
                     except:
                         pass
                     await asyncio.sleep(5)

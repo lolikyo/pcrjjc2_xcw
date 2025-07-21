@@ -1,3 +1,5 @@
+import uuid
+
 from msgpack import packb, unpackb
 from .aiorequests import post
 from random import randint
@@ -81,7 +83,9 @@ class pcrclient:
         self.viewer_id = 0
         self.bsdk = bsclient
         self.headers = {}
+        self.update_headers()
         self.update_version()
+        self.set_headers()
 
         self.shouldLogin = True
         self.shouldLoginB = True
@@ -95,11 +99,18 @@ class pcrclient:
         self.headers['CHANNEL-ID'] = str(self.channel)
         self.shouldLoginB = False
 
-    def update_version(self):
+    @staticmethod
+    def update_version():
         if exists(config):
             with open(config, encoding='utf-8') as fp:
                 version = fp.read().strip()
                 defaultHeaders['APP-VER'] = version
+
+    @staticmethod
+    def update_headers():
+        defaultHeaders['DEVICE-ID'] = uuid.uuid4().hex
+
+    def set_headers(self):
         for key in defaultHeaders.keys():
             self.headers[key] = defaultHeaders[key]
 
