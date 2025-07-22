@@ -17,7 +17,8 @@ from .service import sv
 
 apiroot = 'https://le1-prod-all-gs-gzlj.bilibiligame.net'
 curpath = dirname(__file__)
-config = join(curpath, 'version.txt')
+version_config = join(curpath, 'version.txt')
+device_config = join(curpath, 'device.txt')
 defaultHeaders = {
     'Accept-Encoding': 'gzip',
     'User-Agent': 'Dalvik/2.1.0 (Linux, U, Android 5.1.1, PCRT00 Build/LMY48Z)',
@@ -83,8 +84,8 @@ class pcrclient:
         self.viewer_id = 0
         self.bsdk = bsclient
         self.headers = {}
-        self.update_headers()
-        self.update_version()
+        self.init_device()
+        self.init_version()
         self.set_headers()
 
         self.shouldLogin = True
@@ -100,15 +101,30 @@ class pcrclient:
         self.shouldLoginB = False
 
     @staticmethod
-    def update_version():
-        if exists(config):
-            with open(config, encoding='utf-8') as fp:
+    def init_version():
+        if exists(version_config):
+            with open(version_config, encoding='utf-8') as fp:
                 version = fp.read().strip()
                 defaultHeaders['APP-VER'] = version
 
     @staticmethod
-    def update_headers():
-        defaultHeaders['DEVICE-ID'] = uuid.uuid4().hex
+    def init_device():
+        if exists(device_config):
+            with open(device_config, encoding='utf-8') as fp:
+                device = fp.read().strip()
+                defaultHeaders['DEVICE-ID'] = device
+        else:
+            device_id = uuid.uuid4().hex
+            defaultHeaders['DEVICE-ID'] = device_id
+            sv.logger.info(f"已生成设备id:{device_id}")
+            with open(device_config, "w", encoding='utf-8') as fp:
+                print(device_id, file=fp)
+
+    @staticmethod
+    def update_version(version):
+        defaultHeaders['APP-VER'] = version
+        with open(version_config, "w", encoding='utf-8') as fp:
+            print(version, file=fp)
 
     def set_headers(self):
         for key in defaultHeaders.keys():
@@ -181,8 +197,7 @@ class pcrclient:
             if "/check/game_start" == apiurl and "store_url" in data_headers:
                 version = search(r'_v?([4-9]\.\d\.\d).*?_', data_headers["store_url"]).group(1)
                 defaultHeaders['APP-VER'] = version
-                with open(config, "w", encoding='utf-8') as fp:
-                    print(version, file=fp)
+                self.update_version(version)
                 raise ApiException(f"版本已更新:{version}", 0)
 
             data = response['data']

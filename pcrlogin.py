@@ -116,7 +116,7 @@ class Login:
                 await asyncio.sleep(1)
                 url = f"https://pcrd.tencentbot.top/geetest_renew?captcha_type=1&challenge={challenge}&gt={gt}&userid={userid}&gs=1"
                 header = {"Content-Type": "application/json", "User-Agent": "pcrjjc2/1.0.0"}
-                res = await (await get(url=url, headers=header, timeout=5)).content
+                res = await (await get(url=url, headers=header, timeout=15)).content
                 res = loads(res)
                 uuid = res["uuid"]
                 msg = [f"uuid={uuid}"]
@@ -126,7 +126,7 @@ class Login:
                 while ccnt < 3:
                     ccnt += 1
                     res = await (
-                        await get(url=f"https://pcrd.tencentbot.top/check/{uuid}", headers=header, timeout=5)).content
+                        await get(url=f"https://pcrd.tencentbot.top/check/{uuid}", headers=header, timeout=15)).content
                     res = loads(res)
                     if "queue_num" in res:
                         nu = res["queue_num"]
@@ -248,7 +248,6 @@ class Login:
                     try:
                         if exceptions[0].code == 0:
                             sv.logger.info(f'客户端{self.no}更新版本号')
-                            self.client.update_version()
                             self.client.set_headers()
                     except:
                         pass
