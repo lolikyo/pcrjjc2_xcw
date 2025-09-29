@@ -142,26 +142,26 @@ class pcrclient:
 
     @staticmethod
     def pack(data: object, key: bytes) -> bytes:
-        aes = AES.new(key, AES.MODE_CBC, b'ha4nBYA2APUD6Uv1')
+        aes = AES.new(key, AES.MODE_CBC, b'7Fk9Lm3Np8Qr4Sv2')
         return aes.encrypt(pcrclient.add_to_16(packb(data,
                                                      use_bin_type=False
                                                      ))) + key
 
     @staticmethod
     def encrypt(data: str, key: bytes) -> bytes:
-        aes = AES.new(key, AES.MODE_CBC, b'ha4nBYA2APUD6Uv1')
+        aes = AES.new(key, AES.MODE_CBC, b'7Fk9Lm3Np8Qr4Sv2')
         return aes.encrypt(pcrclient.add_to_16(data.encode('utf8'))) + key
 
     @staticmethod
     def decrypt(data: bytes):
         data = b64decode(data.decode('utf8'))
-        aes = AES.new(data[-32:], AES.MODE_CBC, b'ha4nBYA2APUD6Uv1')
+        aes = AES.new(data[-32:], AES.MODE_CBC, b'7Fk9Lm3Np8Qr4Sv2')
         return aes.decrypt(data[:-32]), data[-32:]
 
     @staticmethod
     def unpack(data: bytes):
         data = b64decode(data.decode('utf8'))
-        aes = AES.new(data[-32:], AES.MODE_CBC, b'ha4nBYA2APUD6Uv1')
+        aes = AES.new(data[-32:], AES.MODE_CBC, b'7Fk9Lm3Np8Qr4Sv2')
         dec = aes.decrypt(data[:-32])
         return unpackb(dec[:-dec[-1]],
                        strict_map_key=False
@@ -194,9 +194,8 @@ class pcrclient:
 
             if 'viewer_id' in data_headers:
                 self.viewer_id = data_headers['viewer_id']
-            if "/check/game_start" == apiurl and "store_url" in data_headers:
-                version = search(r'_v?([4-9]\.\d\.\d).*?_', data_headers["store_url"]).group(1)
-                defaultHeaders['APP-VER'] = version
+            if 'store_url' in data_headers:
+                version = search(r'_v?(\d+\.\d+\.\d+).*?_', data_headers["store_url"]).group(1)
                 self.update_version(version)
                 raise ApiException(f"版本已更新:{version}", 0)
 
