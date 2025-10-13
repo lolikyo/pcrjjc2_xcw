@@ -200,12 +200,24 @@ class pcrclient:
                 raise ApiException(f"版本已更新:{version}", 0)
 
             data = response['data']
+
             if not noerr and 'server_error' in data:
-                data = data['server_error']
-                print(f'pcrclient: {apiurl} api failed {data}')
+                server_error = data['server_error']
+                print(f'pcrclient: {apiurl} api failed {server_error}')
                 if "store_url" in data_headers:
-                    raise ApiException(f"版本自动更新失败：({data['message']})", data['status'])
-                raise ApiException(data['message'], data['status'])
+                    raise ApiException(f"版本自动更新失败：({server_error['message']})", server_error['status'])
+                if 'maintenance_message' in data:
+                    try:
+                        match = search('\d\d\d\d-\d\d-\d\d \d\d:\d\d:\d\d', data['maintenance_message']).group()
+                        end = parse(match)
+                        print(f'server is in maintenance until {match}')
+                        while datetime.now() < end:
+                            await sleep(1)
+                    except:
+                        print(f'server is in maintenance. waiting for 60 secs')
+                        await sleep(60)
+
+                raise ApiException(server_error['message'], server_error['status'])
 
             # print(f'pcrclient: {apiurl} api called')
             return data
@@ -220,20 +232,9 @@ class pcrclient:
         if 'REQUEST-ID' in self.headers:
             self.headers.pop('REQUEST-ID')
 
-        while True:
-            manifest = await self.callapi('/source_ini/get_maintenance_status?format=json', {}, False, noerr=True)
-            if 'maintenance_message' not in manifest:
-                break
 
-            try:
-                match = search('\d\d\d\d-\d\d-\d\d \d\d:\d\d:\d\d', manifest['maintenance_message']).group()
-                end = parse(match)
-                print(f'server is in maintenance until {match}')
-                while datetime.now() < end:
-                    await sleep(1)
-            except:
-                print(f'server is in maintenance. waiting for 60 secs')
-                await sleep(60)
+        manifest = await self.callapi('/source_ini/get_maintenance_status?format=json', {}, False, noerr=True)
+
 
         ver = manifest['required_manifest_ver']
         # print(f'using manifest ver = {ver}')
