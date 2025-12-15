@@ -9,7 +9,7 @@ from nonebot import get_bot, on_command
 
 from .aiorequests import get
 from .jjcbinds import JJCBindsStorage
-from .pcrclient import pcrclient, bsdkclient, ApiException
+from .pcrclient import pcrclient, bsdkclient, ApiException, ClientStatus
 from .service import sv
 from .util import send_to_admin
 
@@ -54,7 +54,6 @@ class Login:
 
         self.client = pcrclient(bsdkclient(self.ac_info, self.captcha_verifier, self.errlogger))
         self.no = client_no  # 客户端编号
-        self.avail = False  # 客户端可用性
 
         self.login_cnt = 0  # 登陆出错尝试重连次数
         self.login_lock = Lock()  # 登录锁
@@ -90,6 +89,7 @@ class Login:
                 else:
                     local_url = f"http://localhost:{bot_config.PORT}/geetest" + url
                 try:
+                    print(local_url)
                     await asyncio.sleep(5)
                     await send_to_admin(
                         f'pcr账号登录需要验证码，请在浏览器中打开链接，'
@@ -176,10 +176,8 @@ class Login:
         while True:
             # 需要登录就重新登录
             if self.client.shouldLogin:
-                self.avail = False
                 await self.login()
                 sv.logger.info(f'{self.no}号客户端{self.ac_info["account"]}重新登录成功！')
-                self.avail = True
 
             # 从队列取任务
             try:
@@ -275,7 +273,6 @@ class Login:
     async def first_login(self):
         await self.login()
         sv.logger.info(f'{self.no}号客户端{self.ac_info["account"]}首次登录成功！')
-        self.avail = True
         # 开始执行查询
         await self.query()
 
@@ -292,13 +289,10 @@ for ac_info in acinfos:
     no += 1
 
 
-def get_avail():
-    avail = False
-    for inst in inst_list:
-        if inst.avail:
-            avail = True
-            break
-    return avail
+def get_clients_status():
+    avail = any(inst.client.status == ClientStatus.ONLINE for inst in inst_list)
+    maintenance = any(inst.client.status == ClientStatus.MAINTENANCE for inst in inst_list)
+    return avail, maintenance
 
 
 # 客户端出错，手动登录
@@ -334,8 +328,7 @@ async def get_client_info(session):
                                 f"账号{inst.ac_info['account']}\n"
                                 f"登录方式:{'自动' if inst.auto else '手动'}\n"
                                 f"验证码状态:{'卡验证' if inst.validating else '未卡验证'}\n"
-                                f"登录状态:{'未登录' if inst.client.shouldLogin else '已登录'}\n"
-                                f"可用性:{'可用' if inst.avail else '不可用'}\n"
+                                f"登录状态:{inst.client.status}\n"
                                 )
                 await bot.send_private_msg(self_id=sid,
                                            user_id=admin,
@@ -347,7 +340,7 @@ async def get_client_info(session):
             for inst in inst_list:
                 msg_list.append(f"客户端{inst.no}:\n"
                                 f"账号{inst.ac_info['account']}\n"
-                                f"可用性:{'可用' if inst.avail else '不可用'}\n"
+                                f"登录状态:{inst.client.status}\n"
                                 )
             await bot.send_private_msg(self_id=sid,
                                        user_id=admin,

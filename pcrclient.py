@@ -47,6 +47,10 @@ class ApiException(Exception):
         super().__init__(message)
         self.code = code
 
+class ClientStatus:
+    OFFLINE = "离线"
+    ONLINE ="在线"
+    MAINTENANCE ="维护"
 
 class bsdkclient:
     '''
@@ -90,6 +94,7 @@ class pcrclient:
 
         self.shouldLogin = True
         self.shouldLoginB = True
+        self.status = ClientStatus.OFFLINE
 
     async def bililogin(self):
         self.uid, self.access_key = await self.bsdk.login()
@@ -202,11 +207,12 @@ class pcrclient:
             data = response['data']
 
             if not noerr and 'server_error' in data:
-                server_error = data['server_error']
-                print(f'pcrclient: {apiurl} api failed {server_error}')
+                error_msg = data['server_error']
+                print(f'pcrclient: {apiurl} api failed {error_msg}')
                 if "store_url" in data_headers:
-                    raise ApiException(f"版本自动更新失败：({server_error['message']})", server_error['status'])
+                    raise ApiException(f"版本自动更新失败：({error_msg['message']})", error_msg['status'])
                 if 'maintenance_message' in data:
+                    self.status = ClientStatus.MAINTENANCE
                     try:
                         match = search('\d\d\d\d-\d\d-\d\d \d\d:\d\d:\d\d', data['maintenance_message']).group()
                         end = parse(match)
@@ -216,12 +222,12 @@ class pcrclient:
                     except:
                         print(f'server is in maintenance. waiting for 60 secs')
                         await sleep(60)
-
-                raise ApiException(server_error['message'], server_error['status'])
+                raise ApiException(error_msg['message'], error_msg['status'])
 
             # print(f'pcrclient: {apiurl} api called')
             return data
         except:
+            self.status = ClientStatus.OFFLINE
             self.shouldLogin = True
             raise
 
@@ -232,9 +238,7 @@ class pcrclient:
         if 'REQUEST-ID' in self.headers:
             self.headers.pop('REQUEST-ID')
 
-
         manifest = await self.callapi('/source_ini/get_maintenance_status?format=json', {}, False, noerr=True)
-
 
         ver = manifest['required_manifest_ver']
         # print(f'using manifest ver = {ver}')
@@ -307,4 +311,5 @@ class pcrclient:
         })
 
         self.shouldLogin = False
+        self.status = ClientStatus.ONLINE
         sv.logger.info(f"PCR账号{self.bsdk.account}已登录！")

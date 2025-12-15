@@ -13,7 +13,8 @@ from nonebot import permission as perm
 from .create_img import generate_info_pic, generate_support_pic
 from .jjcbinds import *
 from .jjchistory import *
-from .pcrlogin import pro_queue, get_avail
+from .pcrclient import ClientStatus
+from .pcrlogin import pro_queue, get_clients_status
 from .service import sv
 from .util import *
 
@@ -32,7 +33,7 @@ fre_detect = True  # 击剑风控开关，默认开启
 bind_limit = 3  # 最大绑定数限制，默认为3
 bind_share = True  # 订阅分享功能，@群友查询群友排名
 
-status = False
+status = False, False
 first_login_success = True
 # 数据库对象初始化
 JJCH = JJCHistoryStorage()
@@ -145,7 +146,7 @@ async def on_query_arena(bot, ev):
     if num == 0:
         await send_user_no_bind(bot, ev)
         return
-    if get_avail():
+    if get_clients_status()[0]:
         n = 0
         for bind in subs:
             game_id = bind['game_id']
@@ -178,7 +179,7 @@ async def query_rank(res_all, no, game_id, user_id, ev, n):
 async def on_query_arena_id(bot, ev):
     robj = ev['match']
     game_id = robj.group(2)
-    if get_avail():
+    if get_clients_status()[0]:
         if not game_id:
             await bot.finish(ev, '请在指令后跟13位游戏id', at_sender=True)
         elif len(game_id) != 13:
@@ -583,17 +584,20 @@ async def send_parena_history(bot, ev):
 async def on_arena_schedule():
     global status, first_login_success
     last_status = status
-    status = get_avail()
-    if last_status is not status:
-        if not status:
-            msg = "竞技场推送服务不可用，可能是服务器正在维护或者全部账号登录出现问题"
+    status = get_clients_status()
+    avail = status[0]
+    maintenance = status[1]
+    if last_status != status:
+        if not avail:
+            msg = "竞技场推送服务不可用，客户端全部离线"
+            if maintenance:
+                msg = "竞技场推送服务不可用，服务器维护中"
+
             if avail_notify == 'broad':
                 await send_sv_group(sv, msg)
             elif avail_notify == 'admin':
                 await send_to_admin(msg)
-            else:
-                pass
-        if status:
+        else:
             if first_login_success:
                 first_login_success = False
                 msg = "竞技场推送服务开始运行，发送pcrstatus获取详细信息"
@@ -606,7 +610,7 @@ async def on_arena_schedule():
                     await send_to_admin(msg)
                 else:
                     pass
-    if status:
+    if avail:
         if pro_queue.empty():
             JJCB.refresh()
             all_bind_cache = deepcopy(JJCB.bind_cache)
@@ -999,7 +1003,7 @@ async def clean_sub_inactive(session: CommandSession):
             sv.logger.error(e)
             await session.send('名次输入有误')
             return
-        if get_avail():
+        if get_clients_status()[0]:
             await session.send(f'开始查询并清理双场名次大于{limit_rank}的用户')
             JJCB.refresh()
             bind_cache = deepcopy(JJCB.bind_cache)
