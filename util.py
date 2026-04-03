@@ -160,6 +160,6 @@ async def send_sv_group(sv, message):
         await asyncio.sleep(0.5)
         try:
             await send_to_group(group_id=g, message=message)
-            sv.logger.info(f'群{g} 投递bot异常成功')
+            sv.logger.info(f'群{g} 投递bot信息成功')
         except:
-            sv.logger.critical(f'群{g} 投递bot异常失败')
+            sv.logger.critical(f'群{g} 投递bot信息失败')

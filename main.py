@@ -34,7 +34,8 @@ bind_limit = 3  # 最大绑定数限制，默认为3
 bind_share = True  # 订阅分享功能，@群友查询群友排名
 
 status = False, False
-first_login_success = True
+fail_cnt = 0
+login_success = False
 # 数据库对象初始化
 JJCH = JJCHistoryStorage()
 JJCB = JJCBindsStorage()
@@ -582,35 +583,49 @@ async def send_parena_history(bot, ev):
 # 关键轮询
 @sv.scheduled_job('interval', minutes=0.2)
 async def on_arena_schedule():
-    global status, first_login_success
-    last_status = status
-    status = get_clients_status()
-    avail = status[0]
-    maintenance = status[1]
-    if last_status != status:
-        if not avail:
-            msg = "竞技场推送服务不可用，客户端全部离线"
-            if maintenance:
-                msg = "竞技场推送服务不可用，服务器维护中"
+    global status, login_success, fail_cnt
+    last_avail, last_maintenance = status
+    avail, maintenance = get_clients_status()
+    status = (avail, maintenance)
 
+    if maintenance:
+        if not last_maintenance:
+            msg = "竞技场推送服务不可用，服务器维护中"
             if avail_notify == 'broad':
                 await send_sv_group(sv, msg)
-            elif avail_notify == 'admin':
-                await send_to_admin(msg)
-        else:
-            if first_login_success:
-                first_login_success = False
-                msg = "竞技场推送服务开始运行，发送pcrstatus获取详细信息"
-                await send_to_admin(msg)
             else:
-                msg = "竞技场推送服务已恢复"
-                if avail_notify == 'broad':
-                    await send_sv_group(sv, msg)
-                elif avail_notify == 'admin':
-                    await send_to_admin(msg)
-                else:
-                    pass
+                await send_to_admin(msg)
+        fail_cnt = 0
+        login_success = False
+        return
+    else:
+        if last_maintenance:
+            msg = "竞技场推送服务恢复中，服务器维护结束"
+            if avail_notify == 'broad':
+                await send_sv_group(sv, msg)
+            else:
+                await send_to_admin(msg)
+
+    if not login_success:
+        if not avail:
+            return
+        else:
+            login_success = True
+            msg = "竞技场推送服务已开始"
+            if avail_notify == 'broad':
+                await send_sv_group(sv, msg)
+            else:
+                await send_to_admin(msg)
+
     if avail:
+        if fail_cnt >= 3:
+            msg = "竞技场推送服务已恢复"
+            if avail_notify == 'broad':
+                await send_sv_group(sv, msg)
+            else:
+                await send_to_admin(msg)
+        fail_cnt = 0
+
         if pro_queue.empty():
             JJCB.refresh()
             all_bind_cache = deepcopy(JJCB.bind_cache)
@@ -624,7 +639,18 @@ async def on_arena_schedule():
             sv.logger.info(f"成功添加{len(bind_cache)}个任务")
         else:
             size = pro_queue.qsize()
-            sv.logger.warning(f"警告，还有{size}个任务等待处理，放弃添加，请检查是否有客户端出现异常，频繁出现此提示请增加客户端数量或者降低查询频率")
+            sv.logger.warning(
+                f"警告，还有{size}个任务等待处理，放弃添加，请检查是否有客户端出现异常，频繁出现此提示请增加客户端数量或者降低查询频率")
+    else:
+        fail_cnt += 1
+        sv.logger.error(f'竞技场推送不可用，第{fail_cnt}次')
+
+        if fail_cnt == 3:
+            msg = "竞技场推送服务不可用，客户端全部离线"
+            if avail_notify == 'broad':
+                await send_sv_group(sv, msg)
+            else:
+                await send_to_admin(msg)
 
 
 @sv.scheduled_job('interval', minutes=15)

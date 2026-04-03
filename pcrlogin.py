@@ -116,7 +116,7 @@ class Login:
                 await asyncio.sleep(1)
                 url = f"https://pcrd.tencentbot.top/geetest_renew?captcha_type=1&challenge={challenge}&gt={gt}&userid={userid}&gs=1"
                 header = {"Content-Type": "application/json", "User-Agent": "pcrjjc2/1.0.0"}
-                res = await (await get(url=url, headers=header, timeout=15)).content
+                res = await (await get(url=url, headers=header, timeout=5)).content
                 res = loads(res)
                 uuid = res["uuid"]
                 msg = [f"uuid={uuid}"]
@@ -153,7 +153,7 @@ class Login:
         if not auto_flag:
             self.auto = False
             await send_to_admin(f'客户端{self.no}自动过码多次尝试失败，可能为服务器错误，自动切换为手动。\n'
-                                f'确实服务器无误后，可发送 pcrval {self.no} auto重新触发自动过码。\n'
+                                f'确实服务器无误后，可发送 pcrval {self.no} auto重新触发自动过码。'
                                 f'客户端{self.no}切换至手动')
             self.validating = False
             return "manual"
@@ -209,22 +209,22 @@ class Login:
                 try:
                     await method(resall, self.no, values['game_id'], values['user_id'], values['ev'], values['n'])
                 except Exception as e:
-                    sv.logger.critical(e)
+                    sv.logger.error(e)
             elif method_name == 'query_info':
                 try:
                     await method(resall, self.no, values['ev'])
                 except Exception as e:
-                    sv.logger.critical(e)
+                    sv.logger.error(e)
             elif method_name == 'compare':
                 try:
                     await method(resall, self.no, values['bind_info'])
                 except Exception as e:
-                    sv.logger.critical(e)
+                    sv.logger.error(e)
             elif method_name == 'sleep_clean':
                 try:
                     await method(resall, values['bind_info'], values['limit_rank'], values['session'])
                 except Exception as e:
-                    sv.logger.critical(e)
+                    sv.logger.error(e)
             else:
                 continue
 
@@ -233,7 +233,7 @@ class Login:
         exceptions = [None]
         while True:
             await self.login_lock.acquire()
-            while self.login_cnt < 3:
+            while self.login_cnt < 5:
                 exceptions = await asyncio.gather(self.client.login(), return_exceptions=True)
                 # 登录正常
                 if exceptions == [None]:
@@ -242,7 +242,7 @@ class Login:
                 # 登陆异常
                 else:
                     self.login_cnt += 1
-                    sv.logger.critical(f'客户端{self.no}出错{str(exceptions)}第{self.login_cnt}次，等待5秒重连')
+                    sv.logger.error(f'客户端{self.no}出错{str(exceptions)}第{self.login_cnt}次，等待5秒重连')
                     try:
                         if exceptions[0].code == 0:
                             sv.logger.info(f'客户端{self.no}更新版本号')
@@ -252,9 +252,9 @@ class Login:
                     await asyncio.sleep(5)
 
             # 3次登录出错不再自动重试，报告admin
-            if self.login_cnt >= 3:
+            if self.login_cnt >= 5:
                 rep_exc = await asyncio.gather(
-                    send_to_admin(message=f'客户端{self.no}出错{str(exceptions)}超过3次,'
+                    send_to_admin(message=f'客户端{self.no}出错{str(exceptions)}超过5次,'
                                           f'可能为网络错误，确认网络正常后,发送pcrlogin {self.no}重试'),
                     return_exceptions=True)
                 if rep_exc != [None]:
@@ -301,16 +301,32 @@ async def validate(session):
     if session.ctx['user_id'] == admin:
         client_no = session.ctx['message'].extract_plain_text().replace(f"pcrlogin", "").strip()
         sid = session.ctx['self_id']
-        try:
-            inst = inst_list[int(client_no)]
+        # 指定序号重登序号客户端
+        if client_no:
             try:
-                inst.login_lock.release()
-                await bot.send_private_msg(self_id=sid, user_id=admin, message=f'客户端{client_no}再次尝试登录')
+                inst = inst_list[int(client_no)]
+                try:
+                    inst.login_lock.release()
+                    await bot.send_private_msg(self_id=sid, user_id=admin, message=f'客户端{client_no}再次尝试登录')
+                except:
+                    await bot.send_private_msg(self_id=sid, user_id=admin, message=f'客户端{client_no}已经登录')
             except:
-                await bot.send_private_msg(self_id=sid, user_id=admin, message=f'客户端{client_no}已经登录')
-        except:
-            await bot.send_private_msg(self_id=sid, user_id=admin, message=f'不存在客户端{client_no}')
-
+                await bot.send_private_msg(self_id=sid, user_id=admin, message=f'不存在客户端{client_no}')
+        # 不指定全部未登录客户端重登
+        else:
+            relogin_inst_no_list = []
+            for inst in inst_list:
+                if inst.client.status == ClientStatus.OFFLINE:
+                    try:
+                        inst.login_lock.release()
+                        relogin_inst_no_list.append(str(inst.no))
+                    except:
+                        pass
+            if relogin_inst_no_list:
+                await bot.send_private_msg(self_id=sid, user_id=admin, message=f"客户端{','.join(relogin_inst_no_list)}再次尝试登录")
+            else:
+                await bot.send_private_msg(self_id=sid, user_id=admin,
+                                           message=f"所有客户端已经登录")
 
 # 查看客户端状态
 @on_command('pcrstatus')
@@ -328,7 +344,7 @@ async def get_client_info(session):
                                 f"账号{inst.ac_info['account']}\n"
                                 f"登录方式:{'自动' if inst.auto else '手动'}\n"
                                 f"验证码状态:{'卡验证' if inst.validating else '未卡验证'}\n"
-                                f"登录状态:{inst.client.status}\n"
+                                f"登录状态:{inst.client.status}"
                                 )
                 await bot.send_private_msg(self_id=sid,
                                            user_id=admin,
